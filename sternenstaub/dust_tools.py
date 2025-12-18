@@ -6,7 +6,7 @@ import astropy.units as u
 from dust_extinction import parameter_averages
 
 from werkzeugkiste import helper_func, phys_params
-from obszugang import gal_access, obs_tools
+from obszugang import PhangsSampleAccess, ObsTools
 
 
 class DustTools:
@@ -48,7 +48,7 @@ class DustTools:
         """
         Function to get Galactic E(B-V) for phangs target
         """
-        phangs_sample = gal_access.PhangsSampleAccess()
+        phangs_sample = PhangsSampleAccess()
         ra_target, dec_target = phangs_sample.get_target_central_coords(target=target)
 
         return DustTools.get_coord_gal_ext_evb(ra=ra_target, dec=dec_target, rad_deg=rad_deg, method=method,
@@ -70,25 +70,13 @@ class DustTools:
         return ext_model(wave_mu) * r_v * gal_ext_ebv
 
     @staticmethod
-    def get_target_gal_ext_band(target, obs, band, rad_deg=None, method='SandF', ebv_estimator='mean', ext_law='F99',
+    def get_target_gal_ext_band(target, band, obs, instrument, rad_deg=None, method='SandF', ebv_estimator='mean', ext_law='F99',
                                 r_v=3.1, wave_estimator='pivot_wave'):
         gal_ext_ebv = DustTools.get_target_gal_ext_ebv(
             target=helper_func.FileTools.target_name_no_directions(target=target), method=method,
             ebv_estimator=ebv_estimator, rad_deg=rad_deg)
-
         # get wavelength
-        if obs in ['hst', 'hst_ha']:
-            wave = obs_tools.ObsTools.get_hst_band_wave(
-                band=band, instrument=obs_tools.ObsTools.get_hst_instrument(target=target, band=band),
-                wave_estimator=wave_estimator, unit='mu') * u.micron
-        elif obs in ['nircam', 'miri']:
-            wave = obs_tools.ObsTools.get_jwst_band_wave(
-                band=band, instrument=obs,
-                wave_estimator=wave_estimator, unit='mu') * u.micron
-        elif obs == 'astrosat':
-            wave = obs_tools.ObsTools.get_astrosat_band_wave(band=band, wave_estimator=wave_estimator, unit='mu') * u.micron
-        else:
-            raise KeyError('obs keywaord not understood!')
+        wave = ObsTools.get_obs_wave(band=band, obs=obs, target=target, instrument=instrument, wave_estimator=wave_estimator, unit='mu') * u.micron
 
         ext_model = getattr(parameter_averages, ext_law)(Rv=r_v)
 
