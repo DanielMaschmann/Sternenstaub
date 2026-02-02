@@ -1,10 +1,11 @@
+"""
+Package to calculate dust extinction and transform between different extinction models
+"""
 import numpy as np
 from astroquery.ipac.irsa.irsa_dust import IrsaDust
 from astropy.coordinates import SkyCoord
 import astropy.units as u
-
 from dust_extinction import parameter_averages
-
 from werkzeugkiste import helper_func, phys_params
 from obszugang import PhangsSampleAccess, ObsTools
 
