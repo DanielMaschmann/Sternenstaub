@@ -1,13 +1,10 @@
 """
 Package to calculate dust extinction and transform between different extinction models
 """
-import numpy as np
-from astroquery.ipac.irsa.irsa_dust import IrsaDust
-from astropy.coordinates import SkyCoord
+
 import astropy.units as u
 from dust_extinction import parameter_averages
-from werkzeugkiste import helper_func, phys_params
-from obszugang import PhangsSampleAccess, ObsTools
+import numpy as np
 
 
 class DustTools:
@@ -17,84 +14,11 @@ class DustTools:
     def __int__(self):
         pass
 
-    @staticmethod
-    def get_coord_gal_ext_evb(ra, dec, rad_deg=None, method='SandF', ebv_estimator='mean'):
-        """
-        Get the Galactic E(B-V) for a given coordinate
-        Parameters
-        ----------
-        ra, dec: float or list or `numpy.ndarray`
-            coordinates in degree
-        rad_deg:  `astropy.units.Quantity`
-        method: str
-            must be SFD or SandF and specifies the reference
-            Schlafly, E.F. & Finkbeiner, D.P. 2011, ApJ 737, 103 (SandF).
-            Schlegel, D.J., Finkbeiner, D.P. Davis, M. 1998, ApJ 500, 525 (SFD).
-        ebv_estimator: str
-            must be in ['mean', 'std', 'ref', 'min', 'max']
-
-        Returns
-        -------
-        gal_ext_ebv: float or list or `numpy.ndarray`
-        """
-        assert ebv_estimator in ['mean', 'std', 'ref', 'min', 'max']
-        assert method in ['SandF', 'SFD']
-
-        target_coords = SkyCoord(ra=ra * u.deg, dec=dec * u.deg)
-        gal_ebv_table = IrsaDust.get_query_table(target_coords, section='ebv', radius=rad_deg)
-        return gal_ebv_table['ext %s %s' % (method, ebv_estimator)]
-
-    @staticmethod
-    def get_target_gal_ext_ebv(target, method='SandF', ebv_estimator='mean', rad_deg=None):
-        """
-        Function to get Galactic E(B-V) for phangs target
-        """
-        phangs_sample = PhangsSampleAccess()
-        ra_target, dec_target = phangs_sample.get_target_central_coords(target=target)
-
-        return DustTools.get_coord_gal_ext_evb(ra=ra_target, dec=dec_target, rad_deg=rad_deg, method=method,
-                                               ebv_estimator=ebv_estimator)
-
-    @staticmethod
-    def get_gal_ext_at_wave(ra, dec, wave_mu, rad_deg=None, method='SandF', ebv_estimator='mean', ext_law='F99', r_v=3.1):
-        gal_ext_ebv = DustTools.get_coord_gal_ext_evb(ra=ra, dec=dec, method=method, ebv_estimator=ebv_estimator,
-                                                      rad_deg=rad_deg)
-        ext_model = getattr(parameter_averages, ext_law)(Rv=r_v)
-        return ext_model(wave_mu*u.micron) * r_v * gal_ext_ebv
-
-    @staticmethod
-    def get_gal_ext(ra, dec, wave_mu, rad_deg=None, method='SandF', ebv_estimator='mean', ext_law='F99', r_v=3.1):
-        gal_ext_ebv = DustTools.get_coord_gal_ext_evb(ra=ra, dec=dec, rad_deg=rad_deg, method=method,
-                                                      ebv_estimator=ebv_estimator)
-
-        ext_model = getattr(parameter_averages, ext_law)(Rv=r_v)
-        return ext_model(wave_mu) * r_v * gal_ext_ebv
-
-    @staticmethod
-    def get_target_gal_ext_band(target, band, obs, instrument, rad_deg=None, method='SandF', ebv_estimator='mean', ext_law='F99',
-                                r_v=3.1, wave_estimator='pivot_wave'):
-        gal_ext_ebv = DustTools.get_target_gal_ext_ebv(
-            target=helper_func.FileTools.target_name_no_directions(target=target), method=method,
-            ebv_estimator=ebv_estimator, rad_deg=rad_deg)
-        # get wavelength
-        wave = ObsTools.get_obs_wave(band=band, obs=obs, target=target, instrument=instrument, wave_estimator=wave_estimator, unit='mu') * u.micron
-
-        ext_model = getattr(parameter_averages, ext_law)(Rv=r_v)
-
-        if (wave.value < (1/ext_model.x_range[1])) | (wave.value > (1/ext_model.x_range[0])):
-            return 0
-        else:
-            return (ext_model(wave) * r_v * gal_ext_ebv).value[0]
 
     @staticmethod
     def mag_ext2ebv(mag, wave, ext_law='CCM89', r_v=3.1):
         ext_model = getattr(parameter_averages, ext_law)(Rv=r_v)
         return mag / (ext_model(wave * u.micron) * r_v)
-
-
-
-
-
 
     @staticmethod
     def c00_redd_curve(wavelength=6565, r_v=3.1):
@@ -127,9 +51,9 @@ class DustTools:
 
         return k_lambda
 
-    @staticmethod
-    def calc_stellar_extinct(wavelength, ebv, r_v):
-        return ExtinctionTools.compute_reddening_curve(wavelength=wavelength, r_v=r_v) * ebv
+    # @staticmethod
+    # def calc_stellar_extinct(wavelength, ebv, r_v):
+    #     return ExtinctionTools.compute_reddening_curve(wavelength=wavelength, r_v=r_v) * ebv
 
     @staticmethod
     def color_ext_ccm89_ebv(wave1, wave2, ebv, r_v=3.1):
@@ -184,3 +108,55 @@ class DustTools:
 
         return (reddening1 - reddening2)*av/reddening_v
 
+    @staticmethod
+    def compute_balmer_extinction(flux_h_alpha, flux_h_beta):
+        """
+        Function to compute E(B-V) from H-alpha and H-beta line flux using the Balmer decrement
+        following dominguez+13 doi:10.1088/0004-637X/763/2/145 assuming an intrinsic ratio
+        H\alpha/H\beta=2.87 (Osterbrock 1989) and the reddening curve from Calzetti et al. (2000) doi:10.1086/308692
+
+        Parameters
+        ----------
+        flux_h_alpha : float or array-like
+        flux_h_beta : float or array-like
+
+        Returns
+        -------
+        ebv: float or array-like
+        """
+
+        # dominguez et al 2013 doi:10.1088/0004-637X/763/2/145
+        # eq. 4
+        # e_b_v = 1.97 * np.log10(flux_h_alpha / flux_h_beta) - 1.97 * np.log10(2.86)
+        e_b_v = 1.97 * np.log10((flux_h_alpha / flux_h_beta) / 2.87 )
+        # e_b_v = 1.97 * np.log10((flux_h_alpha / flux_h_beta) / 2.83 )
+
+        return e_b_v
+
+    @staticmethod
+    def compute_balmer_extinction_err(flux_h_alpha, flux_h_beta, flux_err_h_alpha, flux_err_h_beta):
+        """
+        calculate error of colour excess using the Balmer decrement following
+        Dominguez et al 2013 doi:10.1088/0004-637X/763/2/145
+
+        Parameters
+        ----------
+        flux_h_alpha : float or array-like
+        flux_h_beta : float or array-like
+        flux_err_h_alpha: float or array-like
+        flux_err_h_beta : float or array-like
+
+        Returns
+        -------
+        ebv_err: float or array-like
+        """
+
+        # Using error propagation on Dominguez et al 2013 doi:10.1088/0004-637X/763/2/145 eq. 4
+        e_b_v_err = np.sqrt((1.97 * flux_err_h_alpha / (flux_h_alpha * np.log(10))) ** 2 +
+                            (1.97 * flux_err_h_beta / (flux_h_beta * np.log(10))) ** 2)
+        return e_b_v_err
+
+    @staticmethod
+    def deredden_flux(flux, wave_mu, ebv, ext_law='G23', r_v=3.1):
+        ext_model = getattr(parameter_averages, ext_law)(Rv=r_v)
+        return flux / ext_model.extinguish(wave_mu * u.micron, Ebv=ebv)
